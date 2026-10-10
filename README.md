@@ -34,6 +34,26 @@ python3 -m http.server 8000
 
 Or deploy the folder to any static host (GitHub Pages, Netlify, Vercel).
 
+### Scientist Mode (ages 10–12) — optional AI
+
+The 4–9 app is fully static. The parent-gated **10–12 "Scientist Mode"** adds an
+"Ask Cosmo" box backed by **Gemini + Google Search grounding** via one
+serverless route (`api/ask-scientist.js`). Common questions are answered
+instantly from a local knowledge base; only open-ended/current ones call the API.
+
+To enable it, deploy to a host that runs serverless functions (**Vercel**):
+
+1. Import this repo in Vercel (it auto-detects the static site + `api/` route).
+2. Add an environment variable **`GEMINI_API_KEY`** (server-side) — get a key at
+   https://aistudio.google.com/apikey . It is never sent to the browser.
+3. Deploy. Without the key (e.g. on plain GitHub Pages), Scientist Mode still
+   answers curated questions and shows a friendly fallback for the rest.
+
+Safety: input filter + rate limit + topic blocklist + conservative Gemini
+safety settings + output validation + canned fallback. No questions, answers,
+or IPs are stored. These answers are **grounded**, not guaranteed — Cosmo
+"searches trusted space sources and explains the answer simply."
+
 ## Project layout
 
 ```

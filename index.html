@@ -188,6 +188,18 @@
       #confetti { position:fixed; inset:0; z-index:19; pointer-events:none; overflow:hidden; }
       .confetti { position:fixed; width:9px; height:9px; border-radius:2px; will-change:transform,opacity; animation: confetti 1.1s ease-out forwards; }
       @keyframes confetti { from{transform:translate(0,0) rotate(0);opacity:1} to{transform:translate(var(--dx),var(--dy)) rotate(var(--rot));opacity:0} }
+
+      /* ── Scientist Mode (10–12) ── */
+      .sci-disclaimer { font-size:0.72rem; color:var(--muted); margin:2px 0 10px; }
+      .sci-bubble { background:rgba(6,34,43,0.7); border:1px solid var(--cyan); border-radius:16px; padding:14px; line-height:1.5; }
+      .sci-bubble .who { color:var(--cyan-ink); font-weight:700; font-size:0.8rem; display:block; margin-bottom:5px; }
+      .sci-sources { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
+      .sci-source { font-size:0.68rem; background:var(--panel-2); border:1px solid var(--border); border-radius:999px; padding:3px 10px; color:var(--muted); }
+      .sci-ask-row { display:flex; gap:8px; margin-top:12px; }
+      .sci-input { flex:1; min-height:var(--tap); border-radius:12px; border:2px solid var(--border); background:#020617; color:var(--ink); font-family:inherit; font-size:0.95rem; padding:8px 12px; }
+      .sci-send { min-height:var(--tap); min-width:var(--tap); border-radius:12px; border:none; background:var(--cyan); color:#042f3b; font-weight:800; font-size:1.1rem; cursor:pointer; }
+      .sci-presets { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+      .sci-preset { font-size:0.8rem; background:var(--panel-2); border:1px solid var(--border); border-radius:12px; padding:6px 10px; color:var(--ink); cursor:pointer; text-align:left; }
     </style>
 
     <script type="importmap">
@@ -280,6 +292,22 @@
       <p id="passport-sub"></p>
       <div class="sticker-grid" id="sticker-grid"></div>
       <button class="dialog-close" id="passport-close">Close</button>
+    </dialog>
+
+    <dialog id="sci-dialog" aria-label="Scientist Mode — Ask Cosmo">
+      <h2>🧪 Scientist Mode</h2>
+      <p class="sci-disclaimer">Cosmo searches trusted space sources and explains the answer simply. For ages 10–12.</p>
+      <div class="sci-bubble">
+        <span class="who">🧑‍🚀 Cosmo</span>
+        <span id="sci-answer">Ask me anything about space! 🚀</span>
+        <div class="sci-sources" id="sci-sources"></div>
+      </div>
+      <div class="sci-ask-row">
+        <input class="sci-input" id="sci-input" type="text" maxlength="200" placeholder="Type a space question…" autocomplete="off" />
+        <button class="sci-send" id="sci-send" aria-label="Ask Cosmo">➤</button>
+      </div>
+      <div class="sci-presets" id="sci-presets"></div>
+      <button class="dialog-close" id="sci-close">Close</button>
     </dialog>
 
     <div id="preflight">
@@ -851,6 +879,69 @@
       $("pf-skip").addEventListener("click", () => { $("preflight").hidden = true; });
       $("rocket-btn").addEventListener("click", () => { pop(); renderPreflight(); $("preflight").hidden = false; });
 
+      // ── Scientist Mode (10–12): curated-first, grounded-AI second ──
+      const SCI_API = "/api/ask-scientist";
+      const LOCAL_KB = [
+        { keys: ["how many", "planet"], a: "There are 8 planets in our Solar System: Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus and Neptune. Pluto is a dwarf planet!" },
+        { keys: ["moon", "saturn"], a: "Saturn has more than 140 moons! Its biggest, Titan, is even larger than the planet Mercury." },
+        { keys: ["moon", "jupiter"], a: "Jupiter has about 95 known moons. The four biggest were spotted by Galileo over 400 years ago!" },
+        { keys: ["moon", "mars"], a: "Mars has two tiny, lumpy moons named Phobos and Deimos." },
+        { keys: ["moon", "earth"], a: "Earth has just one moon — we simply call it the Moon!" },
+        { keys: ["biggest", "planet"], a: "Jupiter is the biggest planet — all the other planets could fit inside it!" },
+        { keys: ["largest", "planet"], a: "Jupiter is the largest planet — all the others could fit inside it!" },
+        { keys: ["smallest", "planet"], a: "Mercury is the smallest planet, only a little bigger than our Moon." },
+        { keys: ["hottest", "planet"], a: "Venus is the hottest planet (about 465°C) — its thick clouds trap heat like a cozy blanket." },
+        { keys: ["coldest", "planet"], a: "Neptune is the coldest planet, around −200°C, far out at the edge of the Solar System." },
+        { keys: ["red", "planet"], a: "Mars is the red planet — its soil is full of rusty iron dust!" },
+        { keys: ["ring"], a: "Saturn has the most famous rings, made of ice and rock. Jupiter, Uranus and Neptune have faint rings too!" },
+        { keys: ["closest", "sun"], a: "Mercury is closest to the Sun — and the fastest! A year there is only 88 days." },
+        { keys: ["gravity", "moon"], a: "The Moon's gravity is about 1/6 of Earth's, so you could jump super high there!" },
+        { keys: ["gravity", "jupiter"], a: "Jupiter's gravity is about 2.5 times Earth's — you'd feel really heavy!" },
+        { keys: ["dwarf planet"], a: "A dwarf planet is a round world that hasn't cleared its orbit of other objects. Pluto is the most famous one!" },
+        { keys: ["how hot", "sun"], a: "The Sun's surface is about 5,500°C, and its core is millions of degrees!" },
+        { keys: ["how old", "sun"], a: "The Sun is about 4.6 billion years old — and it's only middle-aged!" },
+        { keys: ["tallest", "volcano"], a: "Olympus Mons on Mars is the tallest volcano in the Solar System — about three times taller than Mount Everest!" },
+      ];
+      function localAnswer(q) {
+        const s = q.toLowerCase();
+        // Hypothetical / imaginative / comparative questions go to the grounded AI,
+        // not the curated fact lookup.
+        if (/\bwhat if\b|what would|would happen|\bimagine\b|\bsuppose\b|happen if|if .*\b(had|were|was|did|didn)\b|\bvs\b|compared to/.test(s)) return null;
+        for (const e of LOCAL_KB) if (e.keys.every((k) => s.includes(k))) return e.a;
+        return null;
+      }
+      const SCI_PRESETS = ["How many moons does Saturn have?", "Which planet is the hottest?", "How big is Jupiter?", "What would happen if Earth had two moons?", "Why is Mars red?"];
+      function renderSciPresets() {
+        const p = $("sci-presets"); p.replaceChildren();
+        SCI_PRESETS.forEach((q) => { const b = document.createElement("button"); b.className = "sci-preset"; b.type = "button"; b.textContent = q; b.addEventListener("click", () => { $("sci-input").value = q; askCosmo(q); }); p.appendChild(b); });
+      }
+      function setSci(answer, sources) {
+        $("sci-answer").textContent = answer;
+        const s = $("sci-sources"); s.replaceChildren();
+        (sources || []).forEach((label) => { const chip = document.createElement("span"); chip.className = "sci-source"; chip.textContent = "📚 " + label; s.appendChild(chip); });
+      }
+      let sciBusy = false;
+      async function askCosmo(q) {
+        q = (q || "").trim(); if (!q || sciBusy) return;
+        sciBusy = true; pop(); setSci("Cosmo is thinking… 🔭", []);
+        const local = localAnswer(q);
+        if (local) { setSci(local, ["Cosmo's space book 📘"]); chime(); sciBusy = false; return; }
+        try {
+          const r = await fetch(SCI_API, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question: q, ageMode: "10-12" }) });
+          if (!r.ok) throw new Error("http " + r.status);
+          const data = await r.json();
+          setSci(data.answer || "Hmm, I'm not sure about that one!", data.sources || []);
+          chime();
+        } catch {
+          setSci("I couldn't reach my space library just now. 📡 Try a planet, moon, rocket or star question — I might know it from my space book!", []);
+        }
+        sciBusy = false;
+      }
+      function openScientist() { setSci("Ask me anything about space! 🚀", []); renderSciPresets(); $("sci-input").value = ""; openDialog("sci-dialog"); setTimeout(() => $("sci-input").focus(), 120); }
+      $("sci-send").addEventListener("click", () => askCosmo($("sci-input").value));
+      $("sci-input").addEventListener("keydown", (e) => { if (e.key === "Enter") askCosmo($("sci-input").value); });
+      $("sci-close").addEventListener("click", () => $("sci-dialog").close());
+
       // ── Worlds list ──
       function setupList() {
         const items = $("list-items"); items.replaceChildren();
@@ -882,7 +973,7 @@
         $("gate-cancel").addEventListener("click", () => $("gate-dialog").close());
         panel.addEventListener("click", (e) => {
           const t = e.target.closest(".mode-btn"); if (!t) return;
-          if (t.dataset.mode === "10-12") { $("gate-dialog").close(); showModal("Scientist mode is coming soon! 🧪", "The 10–12 explorer with live space research is still being built (and carefully safety-checked). For now, enjoy Little Explorer and Space Cadet modes!"); return; }
+          if (t.dataset.mode === "10-12") { $("gate-dialog").close(); openScientist(); return; }
           mode = t.dataset.mode; store.set("cosmo.mode", mode);
           for (const mb of panel.querySelectorAll(".mode-btn")) mb.setAttribute("aria-pressed", String(mb.dataset.mode === mode));
           renderMascot();
