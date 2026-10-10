@@ -56,6 +56,62 @@ A kids' 3D solar-system explorer. Private, offline, self-hostable, zero runtime 
 
 ## 7. Status
 
-- **Done & browser-verified:** §2 core + fun pass, 3D nav, modes, mascots, sounds.
-- **To build:** §3 Fun Pack (3.1–3.3; 3.4 mostly done).
-- **To ship:** README (+credits), LICENSE (MIT), .gitignore, deploy to GitHub Pages.
+- **Done, browser-verified & deployed (v1.0):** §2 core + §3 Fun Pack (3.1–3.4) + visual upgrades (nebula, stardust, planet halos, glassmorphism, confetti). Live at https://ravismash.github.io/cosmo-space-safari/ ; shipped with README (credits), MIT LICENSE, .gitignore.
+- **Planned (v1.1):** §8 Scientist Mode (10–12) — a separate, parent-enabled AI experience. Not built yet; see below.
+
+## 8. Scientist Mode — ages 10–12 (v1.1, AI, SEPARATE BUILD)
+
+A clearly-labeled, **parent-enabled** older-kids mode that answers free-text space questions. This is the **only** place AI enters the product, and it requires a backend — it does **not** run on the static GitHub Pages app. Ship it as a distinct v1.1 experience.
+
+### 8.1 Split architecture (approved)
+- **Ages 4–9:** the existing static client-side app — local content, animations, TTS, **no backend**. Unchanged.
+- **Ages 10–12:** **one serverless route** (`/api/ask-scientist`, e.g. Vercel function) calling **Gemini with Google Search grounding**. No multi-agent orchestration, no MCP server (they add latency, cost, and failure modes without improving the child's experience).
+
+### 8.2 Two-tier answer strategy (curated first, grounded AI second)
+1. **Curated first:** for the ~10 core Solar System objects and stable facts (size, moons, gravity, orbits, temperatures), answer instantly from the local JSON knowledge base — no API call.
+2. **Grounded AI second:** call Gemini only when the question is not covered, is comparative/imaginative ("What if Earth had two moons?"), or needs current information. Reduces latency, cost, and hallucination exposure.
+
+### 8.3 Request flow (`/api/ask-scientist`)
+Client sends `{ question, ageMode }` →
+1. **Input checks:** length cap, allowed characters, **rate limit** (per IP/session + daily cap).
+2. **Blocklist:** personal data, violence, scary content, medical advice, and other non-space/unsafe topics.
+3. **Gemini call** with the `google_search` tool enabled + the system prompt (§8.4) + conservative safety settings.
+4. **Output validation:** length cap; reject/strip URLs, phone numbers, emails, code, personal-data requests.
+5. **Source chips:** if grounding metadata exists, attach 1–2 **kid-friendly source labels** (not raw links).
+6. Return normalized JSON → client renders the Cosmo bubble + optional "Where did this come from?" chips.
+
+### 8.4 System prompt (strict)
+> You are Cosmo, a friendly space science guide for an 11-year-old.
+> Rules:
+> - Use Google Search grounding when the question needs facts.
+> - Answer in at most 3 short sentences.
+> - Use simple, exciting language suitable for ages 10–12.
+> - Be scientifically accurate. If evidence is uncertain, say: "Scientists are still studying this."
+> - Never invent numbers, missions, dates, or sources.
+> - Never ask for the child's name, location, school, photo, or personal details.
+> - Do not discuss violence, scary events, self-harm, drugs, sex, or medical advice.
+> - If the question is unsafe or unrelated to space/science, reply: "I'm best at space questions! Try asking me about planets, moons, rockets, or stars."
+> - Do not include links, phone numbers, emails, code, or instructions.
+> - End with one fun follow-up question only if it fits naturally.
+
+### 8.5 Guardrails (the minimum viable safety architecture)
+| Risk | Mitigation |
+|---|---|
+| API key leakage | `GEMINI_API_KEY` is a **server-side env var only**; never imported into client code |
+| Unlimited API cost | Rate-limit by IP/session, cap question length, require a tap before each request, daily usage cap |
+| Hallucinated science | Require Search grounding for factual questions; show source chips; fallback answer when grounding is weak |
+| Inappropriate output | Input filter **+** Gemini safety settings **+** output validator **+** canned fallback (defense in depth — don't rely on model safety alone) |
+| Child data collection | Do **not** store questions, answers, IPs, or identifiers; ephemeral rate limiting only |
+| Scary answers | Topic blocklist; redirect to planets, rockets, stars, moons |
+
+### 8.6 Positioning / copy (honest, no overpromising)
+- Call it **"grounded answers,"** not "real-time/perfectly-accurate facts." Grounding improves factuality and gives sources; it is **not** an oracle.
+- Child-facing promise: *"Cosmo searches trusted space sources and explains the answer simply."*
+- Don't make James Webb / live updates a core dependency — most Solar System facts are stable and served from the curated layer.
+
+### 8.7 Delivery notes
+- Needs a host that runs serverless functions (Vercel/Netlify Functions) — the 4–9 app can stay on static hosting; the 10–12 mode is a separate deploy with the API route.
+- Requires the owner's **own Gemini API key** (provided via the host's secret manager, never in the repo or chat).
+- COPPA/DPDP: a 10–12 free-text AI feature raises the compliance bar vs. the fully-static 4–9 app — keep it parent-gated, store nothing, and review before public launch.
+
+> Design note: this is the "LLM proposes, deterministic layer decides" pattern — the input filter, grounding requirement, output validator, and fallback are a **policy layer wrapped around the model**, exactly so the model is never the final authority on what a child sees.
