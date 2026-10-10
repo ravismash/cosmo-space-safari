@@ -11,7 +11,7 @@
 // and ephemeral. Set GEMINI_API_KEY in the Vercel project's Environment
 // Variables; without it the route returns a friendly fallback.
 
-const MODEL = "gemini-2.0-flash";
+const MODEL = "gemini-2.5-flash";
 
 const SYSTEM_PROMPT = `You are Cosmo, a friendly space science guide for an 11-year-old.
 Rules:
@@ -72,7 +72,11 @@ function validateOut(text) {
   let t = String(text).trim();
   t = t.replace(/```[\s\S]*?```/g, "").replace(/https?:\/\/\S+/g, "").replace(/\b[\w.+-]+@[\w-]+\.[\w.-]+\b/g, "");
   t = t.replace(/\b\d{3}[-.\s]?\d{3,4}[-.\s]?\d{4}\b/g, "").replace(/\s{2,}/g, " ").trim();
-  if (t.length > 420) t = t.slice(0, 417).trim() + "…";
+  // Enforce brevity deterministically: keep at most 3 sentences (the model
+  // doesn't always obey the prompt).
+  const sentences = t.match(/[^.!?]+[.!?]+(\s|$)/g);
+  if (sentences && sentences.length > 3) t = sentences.slice(0, 3).join("").trim();
+  if (t.length > 380) t = t.slice(0, 377).trim() + "…";
   return t || null;
 }
 
@@ -112,7 +116,9 @@ export default async function handler(req, res) {
         systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
         contents: [{ role: "user", parts: [{ text: question }] }],
         tools: [{ google_search: {} }],
-        generationConfig: { temperature: 0.4, maxOutputTokens: 240 },
+        // Disable "thinking" so the token budget goes to the short answer, not
+        // internal reasoning (gemini-2.5-flash thinks by default).
+        generationConfig: { temperature: 0.4, maxOutputTokens: 400, thinkingConfig: { thinkingBudget: 0 } },
         safetySettings: [
           "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
           "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT",
